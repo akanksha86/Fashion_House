@@ -1,0 +1,28 @@
+/*
+This script is used to create a text embedding model, generate text embeddings for customer reviews, create a vector index on the embeddings, and create a text model for downstream tasks like text classification or clustering etc.
+*/
+
+#Embeddings model creation
+CREATE OR REPLACE MODEL `fashion_data.text_embedding_model`
+REMOTE WITH CONNECTION `us.vertex-ai`
+OPTIONS(ENDPOINT = 'textembedding-gecko@latest');
+
+#Generate Embeddings
+CREATE OR REPLACE TABLE `fashion_data.customer_review_embedding`
+as
+SELECT *
+FROM
+  ML.GENERATE_TEXT_EMBEDDING(
+    MODEL `fashion_data.text_embedding_model`,
+    (select review_text as content from `fashion_data.customer_review` )
+);
+
+#Create Vector Index (min 5000 records needed)
+CREATE OR REPLACE VECTOR INDEX `fashion_data.reviews_index`
+ON `fashion_data.customer_review_embedding`(text_embedding)
+OPTIONS(distance_type='COSINE', index_type='IVF');
+
+#Create text Model endpoint
+CREATE OR REPLACE MODEL `fashion_data.text_model`
+  REMOTE WITH CONNECTION `us.vertex-ai`
+  OPTIONS (ENDPOINT = 'text-bison-32k');
