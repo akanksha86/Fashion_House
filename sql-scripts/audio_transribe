@@ -1,0 +1,49 @@
+/*
+The provided query is designed to perform the following tasks:
+Create an object table named customer_review_audio in the fashion_data dataset. This BigLake table will be used to store audio files from Google Cloud Storage (GCS).
+
+Create a connection to Vertex AI named VertexAI-Ext in US region; details in this link https://cloud.google.com/bigquery/docs/create-cloud-resource-connection
+Create a model named speech_to_text in the fashion_data dataset. This model will be used to transcribe the audio files into text.
+
+Use the ML.TRANSCRIBE function to transcribe the audio files in the customer_review_audio table. The results of the transcription will be stored in a  table named customer_review_transcribe.
+
+Update the review_text column in the customer_review table with the transcribed text from the customer_review_transcribe table.
+*/
+
+#External table creation using connection VertexAI-Ext (replace uri with bucket containing audio files)
+
+CREATE EXTERNAL TABLE `fashion_data.customer_review_audio`
+WITH CONNECTION `us.VertexAI-Ext`
+OPTIONS(
+  object_metadata = 'SIMPLE',
+  uris = ['gs://$gcs_bucket/*'],
+  max_staleness = INTERVAL 1 DAY,
+  metadata_cache_mode = 'AUTOMATIC'
+);
+
+#Create a model to transcribe audio files using connection created above; update the recognizer details
+
+CREATE OR REPLACE MODEL
+`fashion_data.speech_to_text`
+REMOTE WITH CONNECTION `us.VertexAI-Ext`
+OPTIONS (
+  REMOTE_SERVICE_TYPE = 'CLOUD_AI_SPEECH_TO_TEXT_V2',
+  SPEECH_RECOGNIZER = 'projects/$project_id/locations/$location/recognizers/$recognizer_name'
+);
+
+#Use ML.TRANSCRIBE to transcribe the audio and store in another table
+
+CREATE OR REPLACE TABLE fashion_data.customer_review_transcribe AS
+SELECT *
+FROM ML.TRANSCRIBE(
+  MODEL `fashion_data.speech_to_text`,
+  TABLE `fashion_data.customer_review_audio`
+);
+
+#Use the table in above step to update customer review table with transcribed text
+
+UPDATE `fashion_data.customer_review` cr
+SET review_text = tr.transcripts
+FROM `fashion_data.customer_review_transcribe` tr
+WHERE cr.review_audio = tr.uri;
+

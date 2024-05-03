@@ -1,0 +1,73 @@
+#External table creation using connection VertexAI-Ext (replace uri with bucket containing images as product catalog)
+
+CREATE EXTERNAL TABLE `fashion_data.images`
+WITH CONNECTION `us.VertexAI-Ext`
+OPTIONS(
+  object_metadata = 'SIMPLE',
+  uris = ['gs://$gcs_bucket/*'],
+  max_staleness = INTERVAL 1 DAY,
+  metadata_cache_mode = 'AUTOMATIC'
+);
+
+#Create model endpoint for multimodal embeddings creation
+
+CREATE OR REPLACE MODEL `fashion_data.multimodal_embedding`
+  REMOTE WITH CONNECTION `us.vertex-ai`
+  OPTIONS(ENDPOINT = 'multimodalembedding@001');
+
+#Create image embeddings using object table created over images in GCS bucket
+
+CREATE OR REPLACE TABLE `fashion_data.images_embedding`
+as
+SELECT *
+FROM ML.GENERATE_EMBEDDING(
+  MODEL `fashion_data.multimodal_embedding`,
+  TABLE `fashion_data.images`);
+
+#create vector index over image embeddings
+
+CREATE OR REPLACE VECTOR INDEX `fashion_data.images_index`
+ON `fashion_data.images_embedding`(ml_generate_embedding_result)
+OPTIONS(distance_type='COSINE', index_type='IVF');
+
+#Search for products or theme from the images and find top 3 matches from product catalog
+
+SELECT base.uri
+    FROM
+      VECTOR_SEARCH( TABLE `fashion_data.images_embedding`,
+        'ml_generate_embedding_result',
+        (
+        SELECT
+          ml_generate_embedding_result
+        FROM
+          ML.GENERATE_EMBEDDING( MODEL `fashion_data.multimodal_embedding`,
+            (
+            SELECT 'floral dresses' AS content)) ),
+        top_k => 3) ;
+
+SELECT base.uri
+    FROM
+      VECTOR_SEARCH( TABLE `fashion_data.images_embedding`,
+        'ml_generate_embedding_result',
+        (
+        SELECT
+          ml_generate_embedding_result
+        FROM
+          ML.GENERATE_EMBEDDING( MODEL `fashion_data.multimodal_embedding`,
+            (
+            SELECT 'denim jacket' AS content)) ),
+        top_k => 3) ;
+
+
+SELECT base.uri
+    FROM
+      VECTOR_SEARCH( TABLE `fashion_data.images_embedding`,
+        'ml_generate_embedding_result',
+        (
+        SELECT
+          ml_generate_embedding_result
+        FROM
+          ML.GENERATE_EMBEDDING( MODEL `fashion_data.multimodal_embedding`,
+            (
+            SELECT 'dress and accessories to wear for Swedish Midsummer party' AS content)) ),
+        top_k => 3) ;

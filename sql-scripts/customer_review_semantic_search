@@ -1,0 +1,83 @@
+#Query to find customer reviews that are semantically similar to a given input content
+
+#Direct search based on review text
+
+SELECT query.query, base.content
+    FROM
+      VECTOR_SEARCH( TABLE `fashion_data.customer_review_embedding`,
+        'text_embedding',
+        (
+        SELECT
+          text_embedding,
+          content AS query
+        FROM
+          ML.GENERATE_TEXT_EMBEDDING( MODEL `fashion_data.text_embedding_model`,
+            (
+            SELECT 'bad fabric quality' AS content)) ),
+        top_k => 3) ;
+
+
+SELECT ml_generate_text_llm_result AS generated, prompt
+FROM ML.GENERATE_TEXT(
+  MODEL `fashion_data.text_model`,
+  (
+    SELECT CONCAT(
+      'Propose some ideas to improve user experience using the context below: ',
+      STRING_AGG(
+        FORMAT("reviews %s", base.content),
+        ',\n')
+      ) AS prompt,
+    FROM VECTOR_SEARCH(
+      TABLE `fashion_data.customer_review_embedding`, 'text_embedding',
+      (
+        SELECT text_embedding, content AS query
+        FROM ML.GENERATE_TEXT_EMBEDDING(
+          MODEL `fashion_data.text_embedding_model`,
+         (SELECT 'bad fabric quality' AS content)
+        )
+      ),
+    top_k => 3)
+  ),
+  STRUCT(200 AS max_output_tokens, TRUE AS flatten_json_output));
+
+#In-direct search based on product fit
+
+SELECT query.query, base.content
+    FROM
+      VECTOR_SEARCH( TABLE `fashion_data.customer_review_embedding`,
+        'text_embedding',
+        (
+        SELECT
+          text_embedding,
+          content AS query
+        FROM
+          ML.GENERATE_TEXT_EMBEDDING( MODEL `fashion_data.text_embedding_model`,
+            (
+            SELECT 'Product fit' AS content)) ),
+        top_k => 3) ;
+
+#Extract review sentiment and Products mentioned which can help identify the pattern of product fit and negative reviews
+
+SELECT ml_generate_text_llm_result AS generated, prompt
+FROM ML.GENERATE_TEXT(
+  MODEL `fashion_data.text_model`,
+  (
+    SELECT CONCAT(
+      'Extract review sentiment and the products mentioned in each review: ',
+      STRING_AGG(
+        FORMAT("reviews %s", base.content),
+        ',\n')
+      ) AS prompt,
+    FROM VECTOR_SEARCH(
+      TABLE `fashion_data.customer_review_embedding`, 'text_embedding',
+      (
+        SELECT text_embedding, content AS query
+        FROM ML.GENERATE_TEXT_EMBEDDING(
+          MODEL `fashion_data.text_embedding_model`,
+         (SELECT 'Product fit' AS content)
+        )
+      ),
+    top_k => 3)
+  ),
+  STRUCT(200 AS max_output_tokens, TRUE AS flatten_json_output));
+
